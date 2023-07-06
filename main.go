@@ -1,8 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
+	"notifications-service/providers"
+	"os"
 )
 
 func main() {
@@ -24,10 +26,23 @@ func GetHealthCheck(w http.ResponseWriter, r *http.Request) {
 func PostNotify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", "application/json")
 
+	apiKey := r.Header.Get("x-api-key")
+	if !IsAPIKeyValid(&apiKey) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized"))
+		return
+	}
+
 	if r.Method == http.MethodPost {
+		payload := &NotificationsPayload{}
+		err := json.NewDecoder(r.Body).Decode(payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("bad_request"))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
-		var payload = &NotificationsPayload{NotificationType: "discord", Data: ""}
 		go NotificationsHandler(payload)
 	} else {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -41,5 +56,22 @@ type NotificationsPayload struct {
 }
 
 func NotificationsHandler(payload *NotificationsPayload) {
-	fmt.Println(payload.NotificationType)
+	switch payload.NotificationType {
+	case DISCORD:
+		providers.ExecuteDiscordProvider(&payload.Data)
+	default:
+		return
+	}
 }
+
+func IsAPIKeyValid(givenKey *string) bool {
+	apiKey := os.Getenv("API_KEY")
+	if apiKey == "" {
+		panic("[API_KEY] is not defined!")
+	}
+	return apiKey == *givenKey
+}
+
+const (
+	DISCORD = "discord"
+)
